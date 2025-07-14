@@ -150,15 +150,105 @@ class CacheStore {
   }
 
   Future<void> emptyCache() async {
+    // Call the batched version with null (process all at once for backward compatibility)
+    await emptyCacheInBatches(batchSize: null);
+  }
+
+  /// Empty the cache with optional batch processing for large datasets
+  ///
+  /// [batchSize] - Number of files to process in each batch. If null, processes all files at once.
+  /// For large caches (>1000 files), recommended batch size is 100-500 to prevent memory issues.
+  Future<void> emptyCacheInBatches({int? batchSize}) async {
     final provider = await _cacheInfoRepository;
+
+    if (batchSize == null) {
+      // Original behavior: process all files at once
+      await _emptyCacheAllAtOnce(provider);
+    } else {
+      // New batched behavior: process files in chunks
+      await _emptyCacheInBatches(provider, batchSize);
+    }
+  }
+
+  /// Original implementation - processes all files at once
+  Future<void> _emptyCacheAllAtOnce(CacheInfoRepository provider) async {
     final toRemove = <int>[];
     final allObjects = await provider.getAllObjects();
     var futures = <Future>[];
+
     for (final cacheObject in allObjects) {
       futures.add(_removeCachedFile(cacheObject, toRemove));
     }
+
     await Future.wait(futures);
     await provider.deleteAll(toRemove);
+  }
+
+  /// New batched implementation - processes files in configurable chunks
+  Future<void> _emptyCacheInBatches(
+      CacheInfoRepository provider, int batchSize) async {
+    if (batchSize <= 0) {
+      throw ArgumentError('batchSize must be greater than 0');
+    }
+
+    int processedCount = 0;
+    int totalDeleted = 0;
+
+    try {
+      while (true) {
+        // Get a batch of objects to process
+        final allObjects = await provider.getAllObjects();
+
+        if (allObjects.isEmpty) {
+          cacheLogger.log(
+            'CacheManager: Empty cache completed. Total files deleted: $totalDeleted',
+            CacheManagerLogLevel.debug,
+          );
+          break;
+        }
+
+        // Process only up to batchSize objects
+        final batchObjects = allObjects.take(batchSize).toList();
+        final toRemove = <int>[];
+
+        cacheLogger.log(
+          'CacheManager: Processing batch of ${batchObjects.length} files (${processedCount + 1}-${processedCount + batchObjects.length} of ${allObjects.length})',
+          CacheManagerLogLevel.debug,
+        );
+
+        // Process files in this batch with limited parallelism
+        final futures = <Future>[];
+        for (final cacheObject in batchObjects) {
+          futures.add(_removeCachedFile(cacheObject, toRemove));
+        }
+
+        // Wait for all files in this batch to be processed
+        await Future.wait(futures);
+
+        // Delete database records for this batch
+        final deletedCount = await provider.deleteAll(toRemove);
+        totalDeleted += deletedCount;
+        processedCount += batchObjects.length;
+
+        cacheLogger.log(
+          'CacheManager: Batch completed. Deleted $deletedCount files from database',
+          CacheManagerLogLevel.verbose,
+        );
+
+        // Small delay to prevent overwhelming the system
+        await Future.delayed(const Duration(milliseconds: 10));
+      }
+    } catch (e, stackTrace) {
+      cacheLogger.log(
+        'CacheManager: Error during batch cache clearing: $e',
+        CacheManagerLogLevel.warning,
+      );
+      cacheLogger.log(
+        'CacheManager: Stack trace: $stackTrace',
+        CacheManagerLogLevel.warning,
+      );
+      rethrow;
+    }
   }
 
   void emptyMemoryCache() {

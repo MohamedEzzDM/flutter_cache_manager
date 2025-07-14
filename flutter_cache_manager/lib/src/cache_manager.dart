@@ -288,6 +288,23 @@ class CacheManager implements BaseCacheManager {
   @override
   Future<void> emptyCache() => _store.emptyCache();
 
+  /// Empty the cache with optional batch processing for large datasets
+  ///
+  /// [batchSize] - Number of files to process in each batch. If null, processes all files at once.
+  /// For large caches (>1000 files), recommended batch size is 100-500 to prevent memory issues.
+  ///
+  /// Example:
+  /// ```dart
+  /// // For large caches, use batched clearing
+  /// await cacheManager.emptyCacheInBatches(batchSize: 500);
+  ///
+  /// // For backward compatibility, process all at once
+  /// await cacheManager.emptyCacheInBatches(batchSize: null);
+  /// ```
+  @override
+  Future<void> emptyCacheInBatches({int? batchSize}) =>
+      _store.emptyCacheInBatches(batchSize: batchSize);
+
   /// Closes the cache database
   @override
   Future<void> dispose() async {

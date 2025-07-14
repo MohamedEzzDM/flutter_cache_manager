@@ -88,6 +88,12 @@ abstract class BaseCacheManager {
   /// Removes all files from the cache
   Future<void> emptyCache();
 
+  /// Empty the cache with optional batch processing for large datasets
+  ///
+  /// [batchSize] - Number of files to process in each batch. If null, processes all files at once.
+  /// For large caches (>1000 files), recommended batch size is 100-500 to prevent memory issues.
+  Future<void> emptyCacheInBatches({int? batchSize});
+
   /// Closes the cache database
   Future<void> dispose();
 }
