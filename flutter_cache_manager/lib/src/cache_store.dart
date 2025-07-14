@@ -230,13 +230,14 @@ class CacheStore {
         totalDeleted += deletedCount;
         processedCount += batchObjects.length;
 
+        // Adaptive delay based on batch size and platform
+        final delayMs = batchSize > 500 ? 30 : 20;
+        await Future.delayed(Duration(milliseconds: delayMs));
+
         cacheLogger.log(
           'CacheManager: Batch completed. Deleted $deletedCount files from database',
           CacheManagerLogLevel.verbose,
         );
-
-        // Small delay to prevent overwhelming the system
-        await Future.delayed(const Duration(milliseconds: 10));
       }
     } catch (e, stackTrace) {
       cacheLogger.log(
